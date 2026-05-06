@@ -4,7 +4,7 @@ import logging
 import re
 
 from bs4 import BeautifulSoup
-from scraperapi import ScraperAPIClient
+from scraperapi_sdk import ScraperAPIClient
 
 from src.news_fetcher import Article
 from src.config import SCRAPER_API_KEY
