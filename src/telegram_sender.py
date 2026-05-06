@@ -1,77 +1,58 @@
-"""
-telegram_sender.py — Format and deliver the daily digest to Telegram.
-
-Telegram message limit: 4096 chars per message.
-We split long digests into multiple messages automatically.
-"""
 from __future__ import annotations
 
 import logging
 import os
+import html
 from datetime import date
 
 import httpx
 
 from src.agents.classifier import GS_DESCRIPTIONS, GS_ORDER
 from src.agents.summariser import SummarisedArticle
+from src.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
-MAX_MSG_LEN = 4000  # stay safely below Telegram's 4096 limit
+MAX_MSG_LEN = 4000
 
 
-# ── Formatting helpers ────────────────────────────────────────────────────────
-
-# Every character in this set must be preceded by \ in MarkdownV2 text spans.
-_MDV2_SPECIAL = r"\_*[]()~`>#+-=|{}.!"
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _escape(text: str) -> str:
-    """Escape all MarkdownV2 reserved characters in a plain-text span."""
-    return "".join(f"\\{c}" if c in _MDV2_SPECIAL else c for c in str(text))
-
-
-def _escape_url(url: str) -> str:
-    """
-    Escape a URL for use inside a MarkdownV2 inline link: [label](url).
-    Inside the () only ')' and '\\' need escaping per the Telegram spec.
-    """
-    return url.replace("\\", "\\\\").replace(")", "\\)")
+    return html.escape(str(text))
 
 
 def _format_article(idx: int, s: SummarisedArticle) -> str:
-    kw = ", ".join(s.keywords) if s.keywords else "—"
-    title_escaped = _escape(s.article.title)
-    url_escaped   = _escape_url(s.article.url)
+    title = _escape(s.article.title)
+    url = s.article.url
 
-    lines = [
-        # Bold title as a clickable link — avoids raw URL in text span
-        f"*{idx}\\. [{title_escaped}]({url_escaped})*",
-        "",
-        f"📌 *What Happened:* {_escape(s.what_happened)}",
-        f"💡 *Why It Matters:* {_escape(s.why_it_matters)}",
-        f"🎯 *UPSC Relevance:* {_escape(s.upsc_relevance)}",
-        f"🏷 *Keywords:* {_escape(kw)}",
-    ]
-    return "\n".join(lines)
+    what = _escape(s.what_happened)
+    why = _escape(s.why_it_matters)
+    rel = _escape(s.upsc_relevance)
+    kw = _escape(", ".join(s.keywords) if s.keywords else "—")
 
+    return f"""
+<b>{idx}. <a href="{url}">{title}</a></b>
+
+<b>What Happened:</b> {what}
+<b>Why It Matters:</b> {why}
+<b>UPSC Relevance:</b> {rel}
+<b>Keywords:</b> {kw}
+""".strip()
+
+
+def _split_message(text: str) -> list[str]:
+    return [text[i:i + MAX_MSG_LEN] for i in range(0, len(text), MAX_MSG_LEN)]
+
+
+# ── Message Builder ───────────────────────────────────────────────────────────
 
 def build_messages(
     classified: dict[str, list[SummarisedArticle]],
 ) -> list[str]:
-    """
-    Build a list of Telegram-ready MarkdownV2 strings, each ≤ MAX_MSG_LEN chars.
-    """
     today = _escape(date.today().strftime("%A, %d %B %Y"))
-    header = (
-        f"📰 *UPSC Daily News Digest*\n"
-        f"📅 {today}\n"
-        f"{'─' * 30}\n"
-    )
 
     messages: list[str] = []
-    current = header
-    article_idx = 1
 
     for gs in GS_ORDER:
         articles = classified.get(gs)
@@ -79,26 +60,30 @@ def build_messages(
             continue
 
         desc = _escape(GS_DESCRIPTIONS[gs])
-        section_header = f"\n\n📚 *{gs} \\— {desc}*\n{'─' * 28}\n"
 
-        if len(current) + len(section_header) > MAX_MSG_LEN:
-            messages.append(current)
-            current = section_header
-        else:
-            current += section_header
+        header = f"""
+<b>UPSC Daily News</b>
+{today}
+
+<b>{gs} — {desc}</b>
+{"─" * 28}
+""".strip()
+
+        current = header
+        article_idx = 1
 
         for s in articles:
             block = "\n\n" + _format_article(article_idx, s)
             article_idx += 1
 
             if len(current) + len(block) > MAX_MSG_LEN:
-                messages.append(current)
-                current = block
+                messages.extend(_split_message(current))
+                current = header + block
             else:
                 current += block
 
-    if current.strip():
-        messages.append(current)
+        if current.strip():
+            messages.extend(_split_message(current))
 
     return messages
 
@@ -106,36 +91,40 @@ def build_messages(
 # ── Sender ────────────────────────────────────────────────────────────────────
 
 def send_to_telegram(messages: list[str]) -> None:
-    """POST each message chunk to the Telegram Bot API."""
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
+    token = TELEGRAM_BOT_TOKEN
+    chat_id = TELEGRAM_CHAT_ID
+
     url = f"https://api.telegram.org/bot{token}/sendMessage"
 
     for i, text in enumerate(messages, 1):
-        logger.info("Sending Telegram message %d/%d …", i, len(messages))
+        logger.info("Sending message %d/%d", i, len(messages))
+
         payload = {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "MarkdownV2",
+            "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
+
         try:
             resp = httpx.post(url, json=payload, timeout=15)
             resp.raise_for_status()
-            logger.info("Message %d sent ✓", i)
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "Telegram API error (msg %d): %s — %s", i, exc.response.status_code, exc.response.text
+                "Telegram error %d: %s",
+                exc.response.status_code,
+                exc.response.text,
             )
             raise
         except Exception as exc:
-            logger.error("Failed to send message %d: %s", i, exc)
+            logger.error("Failed to send message: %s", exc)
             raise
 
 
+# ── Entry Point ───────────────────────────────────────────────────────────────
+
 def deliver(classified: dict[str, list[SummarisedArticle]]) -> None:
-    """High-level entry point: format + send."""
-    msgs = build_messages(classified)
-    logger.info("Delivering %d Telegram message(s) …", len(msgs))
-    send_to_telegram(msgs)
+    messages = build_messages(classified)
+    logger.info("Delivering %d message(s) to Telegram", len(messages))
+    send_to_telegram(messages)
     logger.info("Delivery complete.")
