@@ -10,12 +10,13 @@ Search strategy (priority order):
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import date
 
 from tavily import TavilyClient
 from duckduckgo_search import DDGS
+
+from src.config import TAVILY_API_KEY, MAX_ARTICLES
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +48,12 @@ def _fetch_via_tavily(
 ) -> list[Article]:
     """
     """
-    API_KEY = os.getenv("TAVILY_API_KEY")
-    if not API_KEY:
-        logger.info("tavily api key not set")
+    if not TAVILY_API_KEY:
+        logger.info("TAVILY_API_KEY not set — skipping Tavily.")
         return []
 
-    client = TavilyClient(api_key=API_KEY)
-    seen_urls: str[str] = set()
+    client = TavilyClient(api_key=TAVILY_API_KEY)
+    seen_urls: set[str] = set()
     articles: list[Article] = []
 
     for query in UPSC_SEARCH_QUERIES:
@@ -142,7 +142,7 @@ def fetch_news(max_articles: int | None = None) -> list[Article]:
       • If Tavily returns < max_articles → top up with DDG.
       • If TAVILY_API_KEY is absent → use DDG only.
     """
-    max_articles = max_articles or int(os.getenv("MAX_ARTICLES", "10"))
+    max_articles = max_articles or MAX_ARTICLES
     today = date.today().strftime("%B %d, %Y")
  
     articles = _fetch_via_tavily(max_articles, today)
