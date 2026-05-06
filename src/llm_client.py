@@ -9,53 +9,41 @@ to adjust keys, model names, temperature, and token limits.
 """
 
 from __future__ import annotations
-
+ 
 import logging
-
+import os
+ 
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-
-from src.config import (
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
-    GROQ_API_KEY,
-    GROQ_MODEL,
-    LLM_MAX_TOKENS,
-    LLM_TEMPERATURE,
-)
-
+ 
 logger = logging.getLogger(__name__)
-
-
+ 
+ 
 def _gemini() -> ChatGoogleGenerativeAI:
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not set.")
     return ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL,
-        google_api_key=GEMINI_API_KEY,
-        temperature=LLM_TEMPERATURE,
-        max_output_tokens=LLM_MAX_TOKENS,
+        model="gemini-2.0-flash",        
+        google_api_key=os.environ["GEMINI_API_KEY"],
+        temperature=0.3,
+        max_output_tokens=2048,
     )
-
-
+ 
+ 
 def _groq() -> ChatGroq:
-    if not GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY is not set.")
     return ChatGroq(
-        model=GROQ_MODEL,
-        groq_api_key=GROQ_API_KEY,
-        temperature=LLM_TEMPERATURE,
-        max_tokens=LLM_MAX_TOKENS,
+        model="llama-3.3-70b-versatile",
+        groq_api_key=os.environ["GROQ_API_KEY"],
+        temperature=0.3,
+        max_tokens=2048,
     )
-
-
+ 
+ 
 def call_llm(prompt: str) -> str:
     """
-    Send *prompt* to the primary LLM; fall back to the secondary on any exception.
-
+    Send *prompt* to the primary LLM (Gemini).
+    Automatically falls back to Groq on any exception.
+ 
     Returns the model's text response as a plain string.
-    Raises RuntimeError if every provider fails.
     """
     for name, build_client in [("Gemini", _gemini), ("Groq", _groq)]:
         try:
@@ -67,7 +55,5 @@ def call_llm(prompt: str) -> str:
             return text
         except Exception as exc:
             logger.warning("%s failed: %s — trying next provider.", name, exc)
-
-    raise RuntimeError(
-        "All LLM providers failed. Check API keys and quotas in your .env file."
-    )
+ 
+    raise RuntimeError("All LLM providers failed. Check API keys and quotas.")
