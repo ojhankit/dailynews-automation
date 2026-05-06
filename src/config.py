@@ -31,6 +31,7 @@ TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
 # Logging
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
+SCRAPER_API_KEY: str = os.getenv("SCRAPER_API_KEY", "")
 
 def validate() -> None:
     missing: list[str] = []
