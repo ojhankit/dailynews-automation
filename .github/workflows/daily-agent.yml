@@ -1,0 +1,54 @@
+name: UPSC Daily News Agent
+
+on:
+  schedule:
+    # Runs at 05:30 UTC = 11:00 IST every day
+    - cron: "30 5 * * *"
+
+  # Allow manual trigger from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  run-agent:
+    name: Fetch · Summarise · Deliver
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY:   ${{ secrets.GROQ_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}   # optional; DDG used if absent
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+      MAX_ARTICLES: "10"
+      MAX_SUMMARY_ARTICLES: "6"
+      LOG_LEVEL: "INFO"
+      # Proxy secrets — uncomment whichever option you enable in scraper.py
+      SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}   # OPTION A
+      # ZYTE_API_KEY:    ${{ secrets.ZYTE_API_KEY }}      # OPTION B
+      # PROXY_LIST:      ${{ secrets.PROXY_LIST }}        # OPTION C
+      # BROWSERLESS_TOKEN: ${{ secrets.BROWSERLESS_TOKEN }} # OPTION D
+
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 📦 Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: 🚀 Run UPSC News Agent
+        run: python main.py
+
+      - name: 📋 Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-logs-${{ github.run_id }}
+          path: "*.log"
+          retention-days: 7
