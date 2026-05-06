@@ -15,50 +15,46 @@ jobs:
     timeout-minutes: 15
 
     env:
-      GEMINI_API_KEY:     ${{ secrets.GEMINI_API_KEY }}
-      GROQ_API_KEY:       ${{ secrets.GROQ_API_KEY }}
-      TAVILY_API_KEY:     ${{ secrets.TAVILY_API_KEY }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-      MAX_ARTICLES:       "10"
-      MAX_SUMMARY_ARTICLES: "6"
-      LOG_LEVEL:          "INFO"
-      FORCE_COLOR:        "1"   # enable ANSI colours in Actions console
-      # Proxy secrets — uncomment whichever option you enable in scraper.py
-      SCRAPER_API_KEY:    ${{ secrets.SCRAPER_API_KEY }}
-      # ZYTE_API_KEY:       ${{ secrets.ZYTE_API_KEY }}
-      # PROXY_LIST:         ${{ secrets.PROXY_LIST }}
-      # BROWSERLESS_TOKEN:  ${{ secrets.BROWSERLESS_TOKEN }}
+      GEMINI_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
+      TAVILY_API_KEY:        ${{ secrets.TAVILY_API_KEY }}
+      TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:      ${{ secrets.TELEGRAM_CHAT_ID }}
+      MAX_ARTICLES:          "10"
+      MAX_SUMMARY_ARTICLES:  "6"
+      LOG_LEVEL:             "INFO"
+      FORCE_COLOR:           "1" 
+      SCRAPER_API_KEY:       ${{ secrets.SCRAPER_API_KEY }}
 
     steps:
-      - name: ⬇️ Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python 3.11
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: 🚀 Run UPSC News Agent
+      - name: Run UPSC News Agent
         id: run_agent
         run: python main.py
 
-      # ── Always upload the structured log, success or failure ─────────────
-      - name: 📤 Upload structured run log (JSONL)
+      # Always upload the structured log, success or failure
+      - name: Upload structured run log (JSONL)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           # Artifact name includes date + run number so every day is distinct
           name: upsc-log-${{ github.run_number }}-${{ github.run_attempt }}
           path: logs/
-          retention-days: 30     # keep 30 days of history
+          retention-days: 30
 
-      # ── Print a human-readable summary into the Actions job summary page ──
-      - name: 📊 Write job summary
+      # Print a human-readable summary into the Actions job summary page
+      - name: Write job summary
         if: always()
         run: |
           python - << 'PYEOF'
@@ -91,20 +87,20 @@ jobs:
 
           summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
           lines = [
-              f"## 📰 UPSC News Agent — Run `{run_id}`\n",
+              f"## UPSC News Agent — Run `{run_id}`\n",
               f"| | |",
               f"|---|---|",
-              f"| ⏱ Started  | `{start_ts}` |",
-              f"| ⏱ Finished | `{end_ts}` |",
-              f"| ✅ INFO     | {counts.get('INFO', 0)} |",
-              f"| ⚠️ WARNING  | {counts.get('WARNING', 0)} |",
-              f"| ❌ ERROR    | {counts.get('ERROR', 0) + counts.get('CRITICAL', 0)} |",
-              f"| 📄 Total    | {len(records)} log records |",
+              f"| Started  | `{start_ts}` |",
+              f"| Finished | `{end_ts}` |",
+              f"| INFO     | {counts.get('INFO', 0)} |",
+              f"| WARNING  | {counts.get('WARNING', 0)} |",
+              f"| ERROR    | {counts.get('ERROR', 0) + counts.get('CRITICAL', 0)} |",
+              f"| Total    | {len(records)} log records |",
               "",
           ]
 
           if errors:
-              lines.append("### ❌ Errors")
+              lines.append("### Errors")
               for r in errors:
                   lines.append(f"- `{r['ts']}` **{r['logger']}** `{r['func']}:{r['line']}`")
                   lines.append(f"  > {r['message']}")
@@ -113,14 +109,14 @@ jobs:
               lines.append("")
 
           if warnings:
-              lines.append("### ⚠️ Warnings")
-              for r in warnings[:10]:   # cap at 10 in summary
+              lines.append("### Warnings")
+              for r in warnings[:10]:
                   lines.append(f"- `{r['ts']}` {r['message']}")
               if len(warnings) > 10:
                   lines.append(f"- … and {len(warnings) - 10} more (see JSONL artifact)")
               lines.append("")
 
-          lines.append("### 📋 Full pipeline log (last 30 records)")
+          lines.append("### Full pipeline log (last 30 records)")
           lines.append("```")
           for r in records[-30:]:
               exc_flag = " [EXC]" if r.get("exc") else ""
@@ -129,11 +125,11 @@ jobs:
               )
           lines.append("```")
           lines.append("")
-          lines.append("> 💾 Full structured JSONL log available in **Artifacts** above.")
+          lines.append("> Full structured JSONL log available in Artifacts above.")
 
           output = "\n".join(lines)
           if summary:
               Path(summary).write_text(output, encoding="utf-8")
           else:
-              print(output)   # fallback: just print if not in Actions
+              print(output)
           PYEOF
